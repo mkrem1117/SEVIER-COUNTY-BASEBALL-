@@ -1,68 +1,66 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import io
 
-st.set_page_config(page_title="Baseball Tracker Pro", layout="wide")
+st.set_page_config(page_title="Auto-Scout Scorebook", layout="wide")
 
-# App Title and Description
-st.title("⚾ Baseball Tracker Pro")
-st.markdown("Professional-grade statistics and game visualization.")
+# --- Initialize Game State ---
+defaults = {
+    'score_home': 0, 'score_away': 0, 'hits': 0, 'errors': 0, 'inning': "1 Top"
+}
+for key, val in defaults.items():
+    if key not in st.session_state: st.session_state[key] = val
 
-# Initialize session state
-if 'game_data' not in st.session_state:
-    st.session_state.game_data = []
+if 'log' not in st.session_state:
+    st.session_state.log = pd.DataFrame(columns=['Event', 'Inning', 'Score', 'Result'])
 
-# --- Input Section ---
+st.title("⚾ Auto-Scout Scorebook")
+
+# --- Sidebar: Action Center ---
 with st.sidebar:
-    st.header("Input Data")
-    pitcher = st.text_input("Pitcher Name")
-    batter = st.text_input("Batter Name")
-    pitch_type = st.selectbox("Pitch Type", ["Fastball", "Curveball", "Slider", "Changeup", "Sinker"])
-    result = st.selectbox("Result", ["Strike", "Ball", "Hit", "Out", "Walk", "HBP"])
+    st.header("Game Actions")
+    inning_select = st.selectbox("Current Inning", ["1 Top", "1 Bot", "2 Top", "2 Bot", "3 Top", "3 Bot", "4 Top", "4 Bot", "5 Top", "5 Bot", "6 Top", "6 Bot", "7 Top", "7 Bot", "8 Top", "8 Bot", "9 Top", "9 Bot"])
     
-    if st.button("Log Pitch"):
-        new_entry = {"Pitcher": pitcher, "Batter": batter, "Type": pitch_type, "Result": result}
-        st.session_state.game_data.append(new_entry)
-        st.success("Pitch added!")
-
-# --- Dashboard Section ---
-if st.session_state.game_data:
-    df = pd.DataFrame(st.session_state.game_data)
+    st.divider()
+    action = st.radio("What happened?", ["Pitch (Ball/Strike)", "Hit", "Run Scored", "Error", "Out"])
     
-    # Stats Calculation
-    total_pitches = len(df)
-    strikes = len(df[df['Result'] == 'Strike'])
-    balls = len(df[df['Result'] == 'Ball'])
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Pitches", total_pitches)
-    col2.metric("Strike %", f"{(strikes/total_pitches)*100:.1f}%" if total_pitches > 0 else "0%")
-    col3.metric("Strike/Ball Ratio", f"{strikes/balls:.2f}" if balls > 0 else "N/A")
-
-    # Data Display
-    st.subheader("Game Log")
-    st.dataframe(df, use_container_width=True)
-
-    # Visualizations
-    st.subheader("Visualizations")
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.write("### Pitch Distribution")
-        fig1, ax1 = plt.subplots()
-        df['Type'].value_counts().plot(kind='pie', autopct='%1.1f%%', ax=ax1)
-        st.pyplot(fig1)
+    if st.button("Log Event"):
+        st.session_state.inning = inning_select
         
-    with c2:
-        st.write("### Result Breakdown")
-        fig2, ax2 = plt.subplots()
-        df['Result'].value_counts().plot(kind='bar', ax=ax2, color='orange')
-        st.pyplot(fig2)
+        # Logic to update scoreboard automatically
+        if action == "Hit": st.session_state.hits += 1
+        elif action == "Run Scored": st.session_state.score_home += 1
+        elif action == "Error": st.session_state.errors += 1
+        
+        # Add to historical log
+        new_entry = pd.DataFrame({
+            'Event': [action], 
+            'Inning': [st.session_state.inning], 
+            'Score': [f"{st.session_state.score_away}-{st.session_state.score_home}"],
+            'Result': [action]
+        })
+        st.session_state.log = pd.concat([st.session_state.log, new_entry], ignore_index=True)
+        st.rerun()
 
-    # Export CSV
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download Game Data (CSV)", csv, "game_data.csv", "text/csv")
+    st.divider()
+    if st.button("Reset Game"):
+        for key in defaults: st.session_state[key] = defaults[key]
+        st.session_state.log = pd.DataFrame(columns=['Event', 'Inning', 'Score', 'Result'])
+        st.rerun()
 
-else:
-    st.info("Waiting for data... Enter your first pitch in the sidebar.")
+# --- Main Dashboard ---
+# Scoreboard
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Score", f"{st.session_state.score_away}-{st.session_state.score_home}")
+col2.metric("Hits", st.session_state.hits)
+col3.metric("Errors", st.session_state.errors)
+col4.metric("Inning", st.session_state.inning)
+
+st.write("---")
+
+# The "Game Text" (Play-by-Play)
+st.subheader("Play-by-Play Record")
+st.dataframe(st.session_state.log.sort_index(ascending=False), use_container_width=True)
+
+# Export
+csv = st.session_state.log.to_csv(index=False).encode('utf-8')
+st.download_button("Export Official Scorebook (CSV)", csv, "scorebook.csv", "text/csv")
